@@ -1,0 +1,1848 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trade Journal</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: #ffffff;
+      min-height: 100vh;
+      overflow-x: hidden;
+      overflow-y: hidden;   /* PC: no scroll */
+      transition: background 0.5s ease;
+    }
+    @media (max-width: 1180px) {
+      body { overflow-y: auto; } /* phone: scroll allowed */
+    }
+
+    /* Warm yellow glow rising from the bottom */
+    body::before {
+      content: '';
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      height: 55%;
+      background: linear-gradient(to top,
+        rgba(255, 214, 60, 0.13) 0%,
+        rgba(255, 228, 100, 0.07) 40%,
+        transparent 100%);
+      pointer-events: none;
+      z-index: 0;
+      transition: opacity 0.5s ease;
+    }
+
+
+    /* ── Night mode ── */
+    body.night-mode { background: #0d1b3e; }
+    body.night-mode::before { opacity: 0; }
+
+    /* Night mode text colours */
+    body.night-mode .app-title,
+    body.night-mode .month-label,
+    body.night-mode .at-val,
+    body.night-mode .at-ring-num,
+    body.night-mode .rules-q,
+    body.night-mode .panel-title { color: #e8eef8; }
+
+    body.night-mode .at-label,
+    body.night-mode .at-ring-cap,
+    body.night-mode .rules-sub,
+    body.night-mode .weekday,
+    body.night-mode .stat-label { color: #4a6898; }
+
+    body.night-mode .stat-value { color: #c8d8f8; }
+
+    body.night-mode .side-panel {
+      background: rgba(10, 22, 58, 0.75);
+      border-color: #1e3560;
+    }
+    body.night-mode .stat-card {
+      background: rgba(10, 22, 58, 0.75);
+      border-color: #1e3560;
+    }
+    body.night-mode .at-row { border-bottom-color: #162048; }
+    body.night-mode .nav-btn {
+      border-color: #1e3560;
+      color: #8aabdb;
+    }
+    body.night-mode .nav-btn:hover { background: #162048; }
+    body.night-mode .day-cell {
+      background: rgba(10, 22, 58, 0.6);
+      border-color: #1e3560;
+    }
+    body.night-mode .day-cell.weekend {
+      border-color: #162048;
+      background: rgba(10, 22, 58, 0.3);
+    }
+    body.night-mode .day-cell.filler {
+      border-color: #111d3a;
+      background: transparent;
+    }
+    body.night-mode .day-cell.today {
+      border-color: #8aabdb;
+      background: rgba(20, 40, 90, 0.8);
+    }
+    body.night-mode .day-num { color: #3d5a8a; }
+    body.night-mode .day-cell.today .day-num { color: #c8d8f8; }
+    body.night-mode .rule-input {
+      background: rgba(10,22,58,0.7);
+      border-color: #1e3560;
+      color: #c8d8f8;
+    }
+    body.night-mode .rule-num {
+      background: rgba(10,22,58,0.7);
+      border-color: #1e3560;
+      color: #3d5a8a;
+    }
+    body.night-mode .rule-row.filled .rule-num {
+      background: #1e3560;
+      border-color: #2a4a7a;
+      color: #c8d8f8;
+    }
+
+    /* Trees fixed to bottom */
+    .bg-trees {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      width: 100%;
+      height: 170px;
+      pointer-events: none;
+      z-index: 0;
+      transition: opacity 0.5s ease;
+    }
+    .bg-trees.day-trees   { opacity: 1; }
+    .bg-trees.night-trees { opacity: 0; }
+    body.night-mode .bg-trees.day-trees   { opacity: 0; }
+    body.night-mode .bg-trees.night-trees { opacity: 1; }
+
+    /* Theme toggle button */
+    .theme-btn {
+      background: none;
+      border: 1.5px solid #e2e2e2;
+      border-radius: 8px;
+      padding: 7px 11px;
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      transition: background 0.15s, border-color 0.15s;
+      font-family: inherit;
+      line-height: 1;
+    }
+    .theme-btn:hover { background: #f4f4f4; border-color: #ccc; }
+    body.night-mode .theme-btn { border-color: #1e3560; background: rgba(13,27,62,0.5); }
+    body.night-mode .theme-btn:hover { background: rgba(30,53,96,0.7); }
+
+    /* Filler cells — ghost outline of adjacent-month days */
+    .day-cell.filler {
+      cursor: default;
+      background: transparent;
+      border: 1.5px solid #e8e8e8;
+      border-radius: 13px;
+      opacity: 0.45;
+    }
+    .day-cell.filler:hover { transform: none !important; background: transparent !important; }
+
+    /* ── Three-panel page layout ── */
+    .page {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: 258px minmax(0, 1fr) 320px;
+      gap: 26px;
+      max-width: 1480px;
+      margin: 0 auto;
+      padding: 20px 20px 20px;
+      align-items: start;
+    }
+
+    .app {
+      position: relative;
+      z-index: 1;
+      min-width: 0;
+    }
+
+    /* ── Side panels (left = all-time, right = rules) ── */
+    .side-panel {
+      position: sticky;
+      top: 34px;
+      background: #fafafa;
+      border: 1.5px solid #ececec;
+      border-radius: 18px;
+      padding: 20px 18px;
+    }
+
+    .panel-title {
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: #111;
+      margin-bottom: 16px;
+    }
+
+    /* ── All-time stat rows ── */
+    .at-stats { display: flex; flex-direction: column; }
+
+    .at-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 0;
+      border-bottom: 1px solid #ededed;
+    }
+    .at-row:last-child { border-bottom: none; }
+
+    .at-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #aaa;
+    }
+    .at-val {
+      font-size: 16px;
+      font-weight: 800;
+      color: #111;
+      letter-spacing: -0.3px;
+    }
+    .at-val.pos { color: #16a34a; }
+    .at-val.neg { color: #dc2626; }
+
+    /* ── Win-rate ring ── */
+    .at-ring-wrap {
+      position: relative;
+      width: 150px;
+      height: 150px;
+      margin: 22px auto 4px;
+    }
+    .at-ring { width: 100%; height: 100%; transform: rotate(-90deg); }
+    .at-ring .ring-bg {
+      fill: none;
+      stroke: #ececec;
+      stroke-width: 11;
+    }
+    .at-ring .ring-fg {
+      fill: none;
+      stroke: #16a34a;
+      stroke-width: 11;
+      stroke-linecap: round;
+      transition: stroke-dashoffset 0.7s cubic-bezier(.4,0,.2,1), stroke 0.3s;
+    }
+    .at-ring-center {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+    .at-ring-num {
+      font-size: 30px;
+      font-weight: 800;
+      color: #111;
+      letter-spacing: -1px;
+      line-height: 1;
+    }
+    .at-ring-cap {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      color: #aaa;
+      margin-top: 5px;
+    }
+
+    /* ── Rules panel ── */
+    .rules-q {
+      font-size: 16px;
+      font-weight: 800;
+      color: #111;
+      line-height: 1.32;
+      letter-spacing: -0.3px;
+      margin-bottom: 4px;
+    }
+    .rules-sub {
+      font-size: 11px;
+      color: #b0b0b0;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+
+    .rules-list { display: flex; flex-direction: column; gap: 9px; }
+
+    .rule-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .rule-num {
+      flex: 0 0 22px;
+      height: 22px;
+      margin-top: 7px;
+      border-radius: 7px;
+      background: #fff;
+      border: 1.5px solid #e6e6e6;
+      font-size: 11px;
+      font-weight: 800;
+      color: #999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .rule-input {
+      flex: 1 1 auto;
+      width: 100%;
+      border: 1.5px solid #ebebeb;
+      border-radius: 9px;
+      padding: 8px 11px;
+      font-size: 13px;
+      line-height: 1.45;
+      color: #111;
+      font-family: inherit;
+      outline: none;
+      resize: none;
+      overflow: hidden;
+      min-height: 36px;
+      background: #fff;
+      transition: border-color 0.15s;
+    }
+    .rule-input:focus { border-color: #555; }
+    .rule-row.filled .rule-num {
+      background: #111;
+      border-color: #111;
+      color: #fff;
+    }
+
+    .rules-save-btn {
+      width: 100%;
+      margin-top: 16px;
+      background: #111;
+      color: #fff;
+      border: none;
+      border-radius: 11px;
+      padding: 12px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+      letter-spacing: 0.2px;
+      transition: background 0.15s, transform 0.1s;
+    }
+    .rules-save-btn:hover { background: #2a2a2a; }
+    .rules-save-btn:active { transform: scale(0.99); }
+    .rules-save-btn:disabled { background: #ccc; cursor: not-allowed; transform: none; }
+
+    /* ── Responsive: stack panels under the calendar ── */
+    @media (max-width: 1180px) {
+      .page {
+        grid-template-columns: 1fr;
+        max-width: 680px;
+        gap: 22px;
+      }
+      .side-panel { position: static; }
+      .app          { order: 1; }
+      .rules-panel  { order: 2; }
+      .alltime-panel{ order: 3; }
+    }
+
+    /* ── Header ── */
+    .app-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+
+    .app-title {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.6px;
+      color: #111;
+    }
+
+    /* ── Admin badge / login button ── */
+    .admin-btn {
+      background: none;
+      border: 1.5px solid #e2e2e2;
+      border-radius: 8px;
+      padding: 7px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #666;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+    .admin-btn:hover { background: #f4f4f4; border-color: #ccc; }
+    .admin-btn.is-admin {
+      color: #16a34a;
+      border-color: #bbf7d0;
+      background: #f0fdf4;
+    }
+    .admin-btn.is-admin:hover { background: #dcfce7; }
+
+    /* ── Sync-from-broker button (admin only) ── */
+    .sync-btn {
+      background: #111;
+      border: 1.5px solid #111;
+      border-radius: 8px;
+      padding: 7px 13px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #fff;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    .sync-btn:hover { background: #333; }
+    .sync-btn:disabled { opacity: 0.55; cursor: default; }
+    .sync-btn .spin { display: inline-block; animation: syncspin 0.8s linear infinite; }
+    @keyframes syncspin { to { transform: rotate(360deg); } }
+    .head-actions { display: flex; align-items: center; gap: 10px; }
+
+    /* ── Viewer mode (non-admin): make modal read-only ── */
+    body.viewer-mode .save-btn,
+    body.viewer-mode .sync-btn,
+    body.viewer-mode .rules-save-btn { display: none !important; }
+    body.viewer-mode input,
+    body.viewer-mode textarea { pointer-events: none; background: #f9f9f9 !important; }
+    body.viewer-mode .day-cell { cursor: default; }
+    body.viewer-mode .day-cell.has-trade { cursor: pointer; }
+    body.viewer-mode .day-cell:hover:not(.has-trade) { transform: none; background: #fafafa; }
+
+    /* ── Month nav ── */
+    .month-nav {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      margin-bottom: 22px;
+    }
+
+    .nav-btn {
+      background: none;
+      border: 1.5px solid #e2e2e2;
+      border-radius: 9px;
+      width: 38px; height: 38px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      color: #444;
+      font-size: 16px;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .nav-btn:hover { background: #f4f4f4; border-color: #ccc; }
+
+    .month-label {
+      font-size: 20px;
+      font-weight: 700;
+      color: #111;
+      min-width: 200px;
+      text-align: center;
+      letter-spacing: -0.3px;
+    }
+
+    /* ── Stats bar ── */
+    .stats-bar {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .stat-card {
+      background: #fafafa;
+      border: 1.5px solid #ececec;
+      border-radius: 12px;
+      padding: 9px 12px;
+    }
+    .stat-label {
+      font-size: 10.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: #aaa;
+      margin-bottom: 5px;
+    }
+    .stat-value {
+      font-size: 17px;
+      font-weight: 800;
+      color: #111;
+      letter-spacing: -0.4px;
+      line-height: 1.15;
+    }
+    .stat-value.pos { color: #16a34a; }
+    .stat-value.neg { color: #dc2626; }
+    @media (max-width: 580px) {
+      .stats-bar { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    /* ── Calendar grid ── */
+    .weekdays {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 7px;
+      margin-bottom: 7px;
+    }
+
+    .weekday {
+      text-align: center;
+      font-size: 11px;
+      font-weight: 700;
+      color: #bbb;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      padding: 4px 0;
+    }
+
+    .days-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 7px;
+    }
+
+    /* ── Day cell ── */
+    .day-cell {
+      aspect-ratio: 1;
+      min-height: 58px;
+      border-radius: 13px;
+      border: 2px solid #facc15;
+      background: #fafafa;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 6px 6px;
+      position: relative;
+      transition: transform 0.15s, box-shadow 0.2s, background 0.15s;
+      user-select: none;
+    }
+
+    .day-cell:hover:not(.empty):not(.weekend) {
+      background: #f3f3f3;
+      transform: translateY(-2px);
+    }
+
+    .day-cell.empty {
+      cursor: default;
+      background: transparent;
+      border-color: transparent;
+    }
+
+    .day-cell.weekend {
+      cursor: not-allowed;
+      border-width: 1.5px;
+      border-color: #d4d4d4;
+      border-style: solid;
+    }
+
+    /* Today wins over weekend — declared AFTER .weekend on purpose */
+    .day-cell.today {
+      border-color: #111;
+      border-width: 2px;
+      background: #fff;
+    }
+
+    /* Edge glow — layered box-shadow only, no bg fill */
+    .day-cell.profit {
+      box-shadow:
+        0 0 0 2px rgba(22, 163, 74, 0.55),
+        0 0 14px 4px rgba(22, 163, 74, 0.28),
+        0 0 28px 8px rgba(22, 163, 74, 0.12);
+      border-color: rgba(22, 163, 74, 0.2);
+    }
+
+    .day-cell.loss {
+      box-shadow:
+        0 0 0 2px rgba(220, 38, 38, 0.55),
+        0 0 14px 4px rgba(220, 38, 38, 0.28),
+        0 0 28px 8px rgba(220, 38, 38, 0.12);
+      border-color: rgba(220, 38, 38, 0.2);
+    }
+
+    .day-num {
+      position: absolute;
+      top: 7px; left: 9px;
+      font-size: 11.5px;
+      font-weight: 700;
+      color: #aaa;
+    }
+
+    .day-cell.today .day-num { color: #111; }
+
+    .day-pnl {
+      font-size: 13px;
+      font-weight: 800;
+      color: #1a1a1a;
+      line-height: 1.1;
+      margin-top: 6px;
+    }
+    .day-pnl.pos { color: #16a34a; }
+    .day-pnl.neg { color: #dc2626; }
+
+    .day-pct {
+      font-size: 10px;
+      font-weight: 600;
+      margin-top: 2px;
+      color: #bbb;
+    }
+    .day-pct.pos { color: #4ade80; }
+    .day-pct.neg { color: #f87171; }
+
+    /* ── Modal overlay ── */
+    .overlay {
+      position: fixed; inset: 0;
+      background: rgba(0, 0, 0, 0.38);
+      backdrop-filter: blur(5px);
+      z-index: 200;
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.22s;
+    }
+    .overlay.open { opacity: 1; pointer-events: all; }
+
+    .modal {
+      background: #fff;
+      border-radius: 22px;
+      width: 92%;
+      max-width: 820px;
+      max-height: 92vh;
+      overflow-y: auto;
+      padding: 30px 28px 28px;
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.18);
+      transform: translateY(14px) scale(0.98);
+      transition: transform 0.22s;
+    }
+    .overlay.open .modal { transform: translateY(0) scale(1); }
+
+    .modal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 22px;
+    }
+
+    .modal-title {
+      font-size: 17px;
+      font-weight: 800;
+      color: #111;
+      letter-spacing: -0.3px;
+    }
+
+    .close-btn {
+      background: #f2f2f2;
+      border: none;
+      border-radius: 8px;
+      width: 32px; height: 32px;
+      font-size: 18px;
+      cursor: pointer;
+      color: #666;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s;
+    }
+    .close-btn:hover { background: #e8e8e8; color: #222; }
+
+    /* ── Modal single-column layout ── */
+    .modal-cols {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 22px;
+    }
+
+    @media (max-width: 580px) {
+      .modal { padding: 22px 16px 20px; }
+    }
+
+    /* ── Form fields ── */
+    .form-stack { display: flex; flex-direction: column; gap: 13px; }
+
+    .field { display: flex; flex-direction: column; gap: 5px; }
+
+    .field label {
+      font-size: 10.5px;
+      font-weight: 700;
+      color: #aaa;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+
+    .field input {
+      border: 1.5px solid #ebebeb;
+      border-radius: 9px;
+      padding: 9px 12px;
+      font-size: 14px;
+      color: #111;
+      outline: none;
+      font-family: inherit;
+      transition: border-color 0.15s;
+      background: #fff;
+    }
+    .field input:focus { border-color: #555; }
+    .field input[readonly] {
+      background: #f7f7f7;
+      color: #666;
+      cursor: not-allowed;
+    }
+    .field input[readonly]:focus { border-color: #ebebeb; }
+
+    /* Fields the Sync button auto-fills from Capital.com — subtle yellow tint */
+    #fProfit, #fPercent, #fTrades, #fMarket {
+      background: #fffbeb;
+      border-color: #fce8a6;
+    }
+    #fProfit:focus,
+    #fTrades:focus, #fMarket:focus { border-color: #f0c850; }
+
+    /* Capital Risked — override control */
+    .cap-row { display: flex; gap: 8px; align-items: stretch; }
+    .cap-row input { flex: 1; min-width: 0; }
+    .cap-override-btn {
+      flex: none;
+      border: 1.5px solid #ebebeb;
+      background: #fff;
+      border-radius: 9px;
+      padding: 0 13px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #555;
+      cursor: pointer;
+      white-space: nowrap;
+      font-family: inherit;
+      transition: all 0.15s;
+    }
+    .cap-override-btn:hover { border-color: #555; color: #111; }
+    /* preset (follows Capital.com) */
+    #fCapital.cap-preset {
+      background: #fffbeb;
+      border-color: #fce8a6;
+      color: #666;
+    }
+    /* overridden (your own locked value) */
+    #fCapital.cap-custom {
+      background: #effaf3;
+      border-color: #b7e4c7;
+      color: #111;
+      cursor: text;
+    }
+    #fCapital.cap-custom:focus { border-color: #38a169; }
+    .cap-row.is-custom .cap-override-btn {
+      border-color: #b7e4c7;
+      background: #effaf3;
+      color: #2f855a;
+    }
+    .cap-row.is-custom .cap-override-btn:hover { border-color: #38a169; color: #276749; }
+    .cap-hint {
+      font-size: 10px;
+      font-weight: 600;
+      color: #b08a00;
+      margin-top: 1px;
+    }
+    .cap-hint.is-custom { color: #2f855a; }
+
+    .field-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 11px;
+    }
+
+    /* ── Notes section ── */
+    .notes-wrap {
+      grid-column: 1 / -1;
+      border-top: 1.5px solid #f0f0f0;
+      padding-top: 20px;
+      margin-top: 6px;
+    }
+
+    .notes-head {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: #bbb;
+      margin-bottom: 14px;
+    }
+
+    .notes-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 13px;
+    }
+
+    .note-field.full { grid-column: 1 / -1; }
+
+    @media (max-width: 580px) {
+      .notes-grid { grid-template-columns: 1fr; }
+    }
+
+    .note-field { display: flex; flex-direction: column; gap: 5px; }
+
+    .note-field label {
+      font-size: 10.5px;
+      font-weight: 700;
+      color: #aaa;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+
+    .note-field textarea {
+      border: 1.5px solid #ebebeb;
+      border-radius: 9px;
+      padding: 9px 12px;
+      font-size: 13px;
+      color: #111;
+      font-family: inherit;
+      outline: none;
+      resize: none;
+      overflow: hidden;
+      min-height: 85px;
+      line-height: 1.5;
+      transition: border-color 0.15s;
+    }
+    .note-field textarea:focus { border-color: #555; }
+
+    /* ── Save button ── */
+    .save-btn {
+      grid-column: 1 / -1;
+      background: #111;
+      color: #fff;
+      border: none;
+      border-radius: 11px;
+      padding: 14px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+      margin-top: 10px;
+      transition: background 0.15s, transform 0.1s;
+      letter-spacing: 0.2px;
+    }
+    .save-btn:hover { background: #2a2a2a; }
+    .save-btn:active { transform: scale(0.99); }
+    .save-btn:disabled { background: #ccc; cursor: not-allowed; transform: none; }
+
+    /* ── Toast ── */
+    .toast {
+      position: fixed;
+      bottom: 28px; left: 50%;
+      transform: translateX(-50%) translateY(16px);
+      background: #111;
+      color: #fff;
+      padding: 11px 22px;
+      border-radius: 9px;
+      font-size: 13px;
+      font-weight: 600;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s, transform 0.25s;
+      z-index: 999;
+      white-space: nowrap;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    .toast.err { background: #dc2626; }
+  </style>
+</head>
+<body>
+
+  <!-- Day trees: barely-there warm-white/cream silhouettes -->
+  <svg class="bg-trees day-trees" viewBox="0 0 1400 170" preserveAspectRatio="xMidYMax slice" xmlns="http://www.w3.org/2000/svg">
+    <path d="M0,170 L0,125 L16,58 L32,125 L32,170 Z" fill="#faf8ee" opacity="0.5"/>
+    <path d="M8,124 L24,52 L40,124 Z" fill="#fdfbf3" opacity="0.4"/>
+    <path d="M17,108 L31,44 L45,108 Z" fill="#faf8ee" opacity="0.35"/>
+    <path d="M75,170 L75,118 L93,46 L111,118 L111,170 Z" fill="#faf8ee" opacity="0.48"/>
+    <path d="M86,116 L104,42 L122,116 Z" fill="#fdfbf3" opacity="0.38"/>
+    <path d="M97,100 L113,36 L129,100 Z" fill="#faf8ee" opacity="0.33"/>
+    <path d="M185,170 L185,122 L202,50 L219,122 L219,170 Z" fill="#faf8ee" opacity="0.5"/>
+    <path d="M195,120 L213,44 L231,120 Z" fill="#fdfbf3" opacity="0.4"/>
+    <path d="M206,104 L222,38 L238,104 Z" fill="#faf8ee" opacity="0.34"/>
+    <path d="M305,170 L305,116 L324,44 L343,116 L343,170 Z" fill="#faf8ee" opacity="0.48"/>
+    <path d="M316,114 L335,40 L354,114 Z" fill="#fdfbf3" opacity="0.38"/>
+    <path d="M328,98 L345,34 L362,98 Z" fill="#faf8ee" opacity="0.32"/>
+    <path d="M430,170 L430,120 L448,48 L466,120 L466,170 Z" fill="#faf8ee" opacity="0.5"/>
+    <path d="M440,118 L458,44 L476,118 Z" fill="#fdfbf3" opacity="0.4"/>
+    <path d="M452,102 L468,36 L484,102 Z" fill="#faf8ee" opacity="0.34"/>
+    <path d="M556,170 L556,124 L573,52 L590,124 L590,170 Z" fill="#faf8ee" opacity="0.48"/>
+    <path d="M566,122 L584,46 L602,122 Z" fill="#fdfbf3" opacity="0.38"/>
+    <path d="M577,106 L593,40 L609,106 Z" fill="#faf8ee" opacity="0.32"/>
+    <path d="M675,170 L675,118 L694,46 L713,118 L713,170 Z" fill="#faf8ee" opacity="0.5"/>
+    <path d="M686,116 L705,42 L724,116 Z" fill="#fdfbf3" opacity="0.4"/>
+    <path d="M699,100 L716,36 L733,100 Z" fill="#faf8ee" opacity="0.34"/>
+    <path d="M800,170 L800,122 L818,50 L836,122 L836,170 Z" fill="#faf8ee" opacity="0.48"/>
+    <path d="M810,120 L828,46 L846,120 Z" fill="#fdfbf3" opacity="0.38"/>
+    <path d="M822,104 L838,38 L854,104 Z" fill="#faf8ee" opacity="0.32"/>
+    <path d="M924,170 L924,116 L942,44 L960,116 L960,170 Z" fill="#faf8ee" opacity="0.5"/>
+    <path d="M934,114 L952,40 L970,114 Z" fill="#fdfbf3" opacity="0.4"/>
+    <path d="M946,98 L962,34 L978,98 Z" fill="#faf8ee" opacity="0.34"/>
+    <path d="M1048,170 L1048,120 L1066,48 L1084,120 L1084,170 Z" fill="#faf8ee" opacity="0.48"/>
+    <path d="M1058,118 L1076,44 L1094,118 Z" fill="#fdfbf3" opacity="0.38"/>
+    <path d="M1070,102 L1086,36 L1102,102 Z" fill="#faf8ee" opacity="0.32"/>
+    <path d="M1174,170 L1174,124 L1192,52 L1210,124 L1210,170 Z" fill="#faf8ee" opacity="0.5"/>
+    <path d="M1184,122 L1202,46 L1220,122 Z" fill="#fdfbf3" opacity="0.4"/>
+    <path d="M1196,106 L1212,40 L1228,106 Z" fill="#faf8ee" opacity="0.34"/>
+    <path d="M1298,170 L1298,118 L1316,46 L1334,118 L1334,170 Z" fill="#faf8ee" opacity="0.48"/>
+    <path d="M1308,116 L1326,42 L1344,116 Z" fill="#fdfbf3" opacity="0.38"/>
+    <path d="M1320,100 L1336,36 L1352,100 Z" fill="#faf8ee" opacity="0.32"/>
+    <path d="M1368,170 L1368,122 L1385,50 L1400,122 L1400,170 Z" fill="#faf8ee" opacity="0.44"/>
+  </svg>
+
+  <!-- Night trees: deep navy silhouettes -->
+  <svg class="bg-trees night-trees" viewBox="0 0 1400 170" preserveAspectRatio="xMidYMax slice" xmlns="http://www.w3.org/2000/svg">
+    <path d="M0,170 L0,125 L16,58 L32,125 L32,170 Z" fill="#0b1e52" opacity="0.95"/>
+    <path d="M8,124 L24,52 L40,124 Z" fill="#091840" opacity="0.88"/>
+    <path d="M17,108 L31,44 L45,108 Z" fill="#08163a" opacity="0.82"/>
+    <path d="M75,170 L75,118 L93,46 L111,118 L111,170 Z" fill="#0b1e52" opacity="0.95"/>
+    <path d="M86,116 L104,42 L122,116 Z" fill="#091840" opacity="0.88"/>
+    <path d="M97,100 L113,36 L129,100 Z" fill="#08163a" opacity="0.82"/>
+    <path d="M185,170 L185,122 L202,50 L219,122 L219,170 Z" fill="#0b1e52" opacity="0.95"/>
+    <path d="M195,120 L213,44 L231,120 Z" fill="#091840" opacity="0.88"/>
+    <path d="M206,104 L222,38 L238,104 Z" fill="#08163a" opacity="0.82"/>
+    <path d="M305,170 L305,116 L324,44 L343,116 L343,170 Z" fill="#0b1e52" opacity="0.95"/>
+    <path d="M316,114 L335,40 L354,114 Z" fill="#091840" opacity="0.88"/>
+    <path d="M328,98 L345,34 L362,98 Z" fill="#08163a" opacity="0.82"/>
+    <path d="M430,170 L430,120 L448,48 L466,120 L466,170 Z" fill="#0b1e52" opacity="0.95"/>
+    <path d="M440,118 L458,44 L476,118 Z" fill="#091840" opacity="0.88"/>
+    <path d="M452,102 L468,36 L484,102 Z" fill="#08163a" opacity="0.82"/>
+    <path d="M556,170 L556,124 L573,52 L590,124 L590,170 Z" fill="#0b1e52" opacity="0.95"/>
+    <path d="M566,122 L584,46 L602,122 Z" fill="#091840" opacity="0.88"/>
+    <path d="M577,106 L593,40 L609,106 Z" fill="#08163a" opacity="0.82"/>
+    <path d="M675,170 L675,118 L694,46 L713,118 L713,170 Z" fill="#0b1e52" opacity="0.95"/>
+    <path d="M686,116 L705,42 L724,116 Z" fill="#091840" opacity="0.88"/>
+    <path d="M699,100 L716,36 L733,100 Z" fill="#08163a" opacity="0.82"/>
+    <path d="M800,170 L800,122 L818,50 L836,122 L836,170 Z" fill="#0b1e52" opacity="0.95"/>
+    <path d="M810,120 L828,46 L846,120 Z" fill="#091840" opacity="0.88"/>
+    <path d="M822,104 L838,38 L854,104 Z" fill="#08163a" opacity="0.82"/>
+    <path d="M924,170 L924,116 L942,44 L960,116 L960,170 Z" fill="#0b1e52" opacity="0.95"/>
+    <path d="M934,114 L952,40 L970,114 Z" fill="#091840" opacity="0.88"/>
+    <path d="M946,98 L962,34 L978,98 Z" fill="#08163a" opacity="0.82"/>
+    <path d="M1048,170 L1048,120 L1066,48 L1084,120 L1084,170 Z" fill="#0b1e52" opacity="0.95"/>
+    <path d="M1058,118 L1076,44 L1094,118 Z" fill="#091840" opacity="0.88"/>
+    <path d="M1070,102 L1086,36 L1102,102 Z" fill="#08163a" opacity="0.82"/>
+    <path d="M1174,170 L1174,124 L1192,52 L1210,124 L1210,170 Z" fill="#0b1e52" opacity="0.95"/>
+    <path d="M1184,122 L1202,46 L1220,122 Z" fill="#091840" opacity="0.88"/>
+    <path d="M1196,106 L1212,40 L1228,106 Z" fill="#08163a" opacity="0.82"/>
+    <path d="M1298,170 L1298,118 L1316,46 L1334,118 L1334,170 Z" fill="#0b1e52" opacity="0.95"/>
+    <path d="M1308,116 L1326,42 L1344,116 Z" fill="#091840" opacity="0.88"/>
+    <path d="M1320,100 L1336,36 L1352,100 Z" fill="#08163a" opacity="0.82"/>
+    <path d="M1368,170 L1368,122 L1385,50 L1400,122 L1400,170 Z" fill="#0b1e52" opacity="0.9"/>
+  </svg>
+
+  <div class="page">
+
+    <!-- ── LEFT: All-time summary ── -->
+    <aside class="side-panel alltime-panel">
+      <div class="panel-title">All Time</div>
+      <div class="at-stats">
+        <div class="at-row"><span class="at-label">Total P&amp;L</span><span class="at-val" id="atPnl">€0</span></div>
+        <div class="at-row"><span class="at-label">Total Return</span><span class="at-val" id="atPct">—</span></div>
+        <div class="at-row"><span class="at-label">Trades</span><span class="at-val" id="atTrades">0</span></div>
+        <div class="at-row"><span class="at-label">Trading Days</span><span class="at-val" id="atDays">0</span></div>
+        <div class="at-row"><span class="at-label">Best Day</span><span class="at-val pos" id="atBest">—</span></div>
+        <div class="at-row"><span class="at-label">Worst Day</span><span class="at-val neg" id="atWorst">—</span></div>
+      </div>
+      <div class="at-ring-wrap">
+        <svg class="at-ring" viewBox="0 0 120 120">
+          <circle class="ring-bg" cx="60" cy="60" r="52"></circle>
+          <circle class="ring-fg" id="atRingFg" cx="60" cy="60" r="52"></circle>
+        </svg>
+        <div class="at-ring-center">
+          <div class="at-ring-num" id="atWinNum">—</div>
+          <div class="at-ring-cap">Win rate</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ── CENTER: Calendar journal ── -->
+    <div class="app">
+      <div class="app-header">
+        <span class="app-title">Trade Journal</span>
+        <div class="head-actions">
+          <button class="theme-btn" id="themeBtn" title="Toggle day / night">🌙</button>
+          <button class="sync-btn" id="syncBtn" title="Pull closed trades from Capital.com">
+            <span id="syncBtnIcon">⟳</span>
+            <span id="syncBtnLabel">Sync</span>
+          </button>
+          <button class="admin-btn" id="adminBtn" title="Admin login">
+            <span id="adminBtnIcon">🔒</span>
+            <span id="adminBtnLabel">Admin</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="month-nav">
+        <button class="nav-btn" id="prevMonth">&#8592;</button>
+        <span class="month-label" id="monthLabel"></span>
+        <button class="nav-btn" id="nextMonth">&#8594;</button>
+      </div>
+
+      <div class="stats-bar">
+        <div class="stat-card">
+          <div class="stat-label">Month P&amp;L</div>
+          <div class="stat-value" id="statPnl">€0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Month %</div>
+          <div class="stat-value" id="statPct">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Win Rate</div>
+          <div class="stat-value" id="statWinrate">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Trades</div>
+          <div class="stat-value" id="statTrades">0</div>
+        </div>
+      </div>
+
+      <div class="weekdays">
+        <div class="weekday">Sun</div>
+        <div class="weekday">Mon</div>
+        <div class="weekday">Tue</div>
+        <div class="weekday">Wed</div>
+        <div class="weekday">Thu</div>
+        <div class="weekday">Fri</div>
+        <div class="weekday">Sat</div>
+      </div>
+      <div class="days-grid" id="daysGrid"></div>
+    </div>
+
+    <!-- ── RIGHT: Trade entry rules ── -->
+    <aside class="side-panel rules-panel">
+      <div class="rules-q">What rules do we need to enter a trade?</div>
+      <div class="rules-sub" id="rulesSub">My checklist — every trade must pass these</div>
+      <div class="rules-list" id="rulesList"></div>
+      <button class="rules-save-btn" id="rulesSaveBtn">Save rules</button>
+    </aside>
+
+  </div>
+
+  <!-- Day detail modal -->
+  <div class="overlay" id="overlay">
+    <div class="modal">
+      <div class="modal-head">
+        <span class="modal-title" id="modalTitle">Trade Details</span>
+        <button class="close-btn" id="closeBtn">&times;</button>
+      </div>
+
+      <div class="modal-cols">
+        <!-- Trade data -->
+        <div class="form-stack">
+          <div class="field">
+            <label>Date</label>
+            <input type="date" id="fDate" />
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label>Profit / Loss (€)</label>
+              <input type="number" id="fProfit" placeholder="e.g. 250 or -80" step="0.01" />
+            </div>
+            <div class="field">
+              <label>Gain / Loss (%)</label>
+              <input type="number" id="fPercent" placeholder="auto-calculated" step="0.01" readonly />
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label>Capital Risked (€)</label>
+              <div class="cap-row" id="capRow">
+                <input type="number" id="fCapital" placeholder="e.g. 1000" step="0.01" readonly />
+                <button type="button" class="cap-override-btn" id="capOverrideBtn">Override</button>
+              </div>
+              <div class="cap-hint" id="capHint">Using Capital.com value</div>
+            </div>
+            <div class="field">
+              <label>R:R Ratio</label>
+              <input type="text" id="fRR" placeholder="e.g. 1:2.5" />
+            </div>
+          </div>
+          <div class="field">
+            <label>Trades Taken</label>
+            <input type="number" id="fTrades" placeholder="e.g. 3" min="0" step="1" />
+          </div>
+          <div class="field">
+            <label>Market Traded</label>
+            <input type="text" id="fMarket" placeholder="e.g. EUR/USD, AAPL, BTC" />
+          </div>
+        </div>
+
+        <!-- Notes — full width -->
+        <div class="notes-wrap">
+          <div class="notes-head">Notes</div>
+          <div class="notes-grid">
+            <div class="note-field">
+              <label>Feeling Before</label>
+              <textarea id="nBefore" placeholder="How were you feeling going into the session?"></textarea>
+            </div>
+            <div class="note-field">
+              <label>Why did you enter?</label>
+              <textarea id="nEntry" placeholder="What was your setup / reason for taking this trade?"></textarea>
+            </div>
+            <div class="note-field">
+              <label>Why did you close?</label>
+              <textarea id="nClose" placeholder="What made you exit when you did?"></textarea>
+            </div>
+            <div class="note-field">
+              <label>Feeling After</label>
+              <textarea id="nAfter" placeholder="How did you feel once the session ended?"></textarea>
+            </div>
+            <div class="note-field full">
+              <label>Summary</label>
+              <textarea id="nSummary" placeholder="What did today teach you?"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <button class="save-btn" id="saveBtn">Save Trade</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    /* ── State ── */
+    const MONTHS = ['January','February','March','April','May','June',
+                    'July','August','September','October','November','December'];
+    let now        = new Date();
+    let viewYear   = now.getFullYear();
+    let viewMonth  = now.getMonth();
+    let tradesData = {};       // { 'YYYY-MM-DD': {profit,percent,...} }
+    let activeDate = null;
+    let capOverridden = false;  // true when current day uses a manual capital value
+
+    /* ── Helpers ── */
+    function pad(n) { return String(n).padStart(2, '0'); }
+
+    function fmtMoney(v) {
+      const abs = Math.abs(v);
+      const s = abs.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+      return (v >= 0 ? '+€' : '-€') + s;
+    }
+
+    function fmtPct(v) {
+      return (v >= 0 ? '+' : '') + Number(v).toFixed(2) + '%';
+    }
+
+    /* Effective capital for a day: the overridden value if locked, else the Capital.com value */
+    function effCapital(t) {
+      return (t && t.capitalOverridden) ? t.capitalRisked : (t ? t.capital : undefined);
+    }
+
+    /* Switch the Capital Risked field between "follow Capital.com" and "your locked value" */
+    function applyCapitalMode(custom) {
+      capOverridden = custom;
+      const input = document.getElementById('fCapital');
+      const row   = document.getElementById('capRow');
+      const hint  = document.getElementById('capHint');
+      const btn   = document.getElementById('capOverrideBtn');
+
+      input.classList.remove('cap-preset', 'cap-custom');
+      if (custom) {
+        input.classList.add('cap-custom');
+        input.readOnly = false;
+        row.classList.add('is-custom');
+        hint.classList.add('is-custom');
+        hint.textContent = 'Locked — Capital.com can\u2019t change this';
+        btn.textContent = 'Use Capital.com';
+      } else {
+        input.classList.add('cap-preset');
+        input.readOnly = true;
+        row.classList.remove('is-custom');
+        hint.classList.remove('is-custom');
+        hint.textContent = 'Using Capital.com value';
+        btn.textContent = 'Override';
+      }
+    }
+
+    /* Override button: lock to your own value, or hand control back to Capital.com */
+    document.getElementById('capOverrideBtn').addEventListener('click', () => {
+      const input = document.getElementById('fCapital');
+      if (!capOverridden) {
+        applyCapitalMode(true);   // take over — keep current value as a starting point
+        input.focus();
+        input.select();
+      } else {
+        applyCapitalMode(false);  // give it back — restore the Capital.com value
+        const t = tradesData[activeDate];
+        input.value = (t && t.capital !== undefined) ? t.capital : '';
+        recalcPercent();
+      }
+    });
+
+    /* Auto-calc % from profit / capital */
+    function recalcPercent() {
+      const p = parseFloat(document.getElementById('fProfit').value);
+      const c = parseFloat(document.getElementById('fCapital').value);
+      const pctEl = document.getElementById('fPercent');
+      if (!isNaN(p) && !isNaN(c) && c > 0) {
+        pctEl.value = (p / c * 100).toFixed(2);
+      } else {
+        pctEl.value = '';
+      }
+    }
+
+    /* ── Month stats — top bar P&L / win rate / etc. ── */
+    function computeMonthStats() {
+      const prefix = viewYear + '-' + pad(viewMonth + 1) + '-';
+      let totalPnl = 0, totalCapital = 0, wins = 0, losses = 0, totalTrades = 0;
+
+      for (const date in tradesData) {
+        if (!date.startsWith(prefix)) continue;
+        const t = tradesData[date];
+        if (t.profit === '' || t.profit === undefined) continue;
+
+        const p = parseFloat(t.profit);
+        if (isNaN(p)) continue;
+
+        totalPnl += p;
+        if (p > 0) wins++;
+        else if (p < 0) losses++;
+
+        const c = parseFloat(effCapital(t));
+        if (!isNaN(c) && c > 0) totalCapital += c;
+
+        const tt = parseInt(t.trades);
+        if (!isNaN(tt)) totalTrades += tt;
+      }
+
+      const tradingDays = wins + losses;
+      const winrate    = tradingDays > 0 ? (wins / tradingDays * 100) : null;
+      const pctReturn  = totalCapital > 0 ? (totalPnl / totalCapital * 100) : null;
+
+      /* P&L */
+      const pnlEl = document.getElementById('statPnl');
+      pnlEl.textContent = totalPnl === 0 ? '€0' : fmtMoney(totalPnl);
+      pnlEl.className = 'stat-value' + (totalPnl > 0 ? ' pos' : totalPnl < 0 ? ' neg' : '');
+
+      /* % */
+      const pctEl = document.getElementById('statPct');
+      if (pctReturn === null) {
+        pctEl.textContent = '—';
+        pctEl.className = 'stat-value';
+      } else {
+        pctEl.textContent = fmtPct(pctReturn);
+        pctEl.className = 'stat-value' + (pctReturn > 0 ? ' pos' : pctReturn < 0 ? ' neg' : '');
+      }
+
+      /* Win rate */
+      const wrEl = document.getElementById('statWinrate');
+      if (winrate === null) {
+        wrEl.textContent = '—';
+        wrEl.className = 'stat-value';
+      } else {
+        wrEl.textContent = winrate.toFixed(0) + '%';
+        wrEl.className = 'stat-value' + (winrate >= 50 ? ' pos' : ' neg');
+      }
+
+      /* Total trades */
+      document.getElementById('statTrades').textContent = totalTrades || '0';
+    }
+
+    /* ── Toast ── */
+    let toastTimer;
+    function toast(msg, isErr = false) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.className = 'toast show' + (isErr ? ' err' : '');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+    }
+
+    /* ── Storage: Cloudflare D1 via Pages Functions ── */
+    const CACHE_KEY = 'tradejournal_cache';
+    const PW_KEY    = 'tradejournal_admin_pw';
+    const OVR_KEY   = 'tradejournal_capital_overrides';
+
+    /* Capital overrides are stored in their own D1 table via /api/overrides, so a
+       Capital.com sync can never wipe them, and they follow you across devices.
+       localStorage is just an offline cache + instant-paint mirror. */
+    function loadOverrides() {
+      try { return JSON.parse(localStorage.getItem(OVR_KEY)) || {}; }
+      catch { return {}; }
+    }
+    function saveOverrides(obj) {
+      localStorage.setItem(OVR_KEY, JSON.stringify(obj));
+    }
+    function setOverride(date, value) {
+      const o = loadOverrides(); o[date] = value; saveOverrides(o);
+    }
+    function clearOverride(date) {
+      const o = loadOverrides(); delete o[date]; saveOverrides(o);
+    }
+
+    /* Pull the authoritative override set from D1 (falls back to local cache if offline
+       or the endpoint isn't deployed yet, so the app never breaks). */
+    async function syncOverridesFromServer() {
+      try {
+        const r = await fetch('/api/overrides', { cache: 'no-store' });
+        if (r.ok) {
+          const map = await r.json();
+          if (map && typeof map === 'object') saveOverrides(map);
+        }
+      } catch { /* offline / not deployed → keep local cache */ }
+    }
+
+    /* Write one override to D1 (and the local cache). Best-effort: if the server write
+       fails the local copy still holds, so nothing is lost. */
+    async function pushOverride(date, value, pw) {
+      const blank = (value === '' || value === null || value === undefined);
+      if (blank) clearOverride(date); else setOverride(date, value);
+      try {
+        await fetch('/api/overrides', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Admin-Password': pw },
+          body: JSON.stringify({ date, value: blank ? '' : value }),
+        });
+      } catch { /* keep local copy; will reconcile on next successful load */ }
+    }
+
+    /* Re-apply overrides onto whatever just came back from the server */
+    function applyLocalOverrides() {
+      const o = loadOverrides();
+      for (const date in o) {
+        if (!tradesData[date]) continue;   // no trade that day → nothing to adjust
+        tradesData[date].capitalOverridden = true;
+        tradesData[date].capitalRisked     = o[date];
+      }
+    }
+
+    function adminPw()      { return sessionStorage.getItem(PW_KEY) || ''; }
+    function isAdmin()      { return !!adminPw(); }
+    function setAdminPw(pw) { sessionStorage.setItem(PW_KEY, pw); }
+    function clearAdminPw() { sessionStorage.removeItem(PW_KEY); }
+
+    /* Verify password: POST a lightweight auth-check endpoint */
+    async function verifyAdminPw(pw) {
+      try {
+        const r = await fetch('/api/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: pw }),
+        });
+        return r.ok;
+      } catch { return false; }
+    }
+
+    /* Load all trades — public, no auth */
+    async function loadAllTrades() {
+      /* Instant render from localStorage cache */
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) {
+        try { tradesData = JSON.parse(cached); } catch { tradesData = {}; }
+      }
+      /* Always refresh from server (public endpoint) */
+      try {
+        const r = await fetch('/api/trades', { cache: 'no-store' });
+        if (r.ok) {
+          const txt = await r.text();
+          tradesData = JSON.parse(txt);
+          localStorage.setItem(CACHE_KEY, txt);
+        }
+      } catch { /* offline → use cache */ }
+
+      /* Restore capital overrides from D1 (cross-device), then re-apply them */
+      await syncOverridesFromServer();
+      applyLocalOverrides();
+    }
+
+    /* Save trade data — requires admin password */
+    async function saveTradeData(dateStr, payload) {
+      const pw = adminPw();
+      if (!pw) throw new Error('Not admin');
+      const r = await fetch('/api/trades', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Admin-Password': pw },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) throw new Error('Save failed: ' + r.status);
+      /* Persist the override in its own D1 table so a future sync can't kill it
+         and so it follows you across devices */
+      if (payload.capitalOverridden) await pushOverride(dateStr, payload.capitalRisked, pw);
+      else await pushOverride(dateStr, '', pw);
+      tradesData[dateStr] = payload;
+      localStorage.setItem(CACHE_KEY, JSON.stringify(tradesData));
+    }
+
+    /* ── Admin UI ── */
+    function refreshAdminUI() {
+      const btn   = document.getElementById('adminBtn');
+      const icon  = document.getElementById('adminBtnIcon');
+      const label = document.getElementById('adminBtnLabel');
+      if (isAdmin()) {
+        btn.classList.add('is-admin');
+        icon.textContent  = '🔓';
+        label.textContent = 'Admin · Logout';
+        document.body.classList.remove('viewer-mode');
+      } else {
+        btn.classList.remove('is-admin');
+        icon.textContent  = '🔒';
+        label.textContent = 'Admin';
+        document.body.classList.add('viewer-mode');
+      }
+      if (typeof renderRules === 'function') renderRules();
+    }
+
+    document.getElementById('adminBtn').addEventListener('click', async () => {
+      if (isAdmin()) {
+        if (confirm('Log out of admin?')) {
+          clearAdminPw();
+          refreshAdminUI();
+          toast('Logged out.');
+        }
+        return;
+      }
+      const pw = prompt('Admin password:');
+      if (!pw) return;
+      toast('Checking…');
+      const ok = await verifyAdminPw(pw);
+      if (ok) {
+        setAdminPw(pw);
+        refreshAdminUI();
+        toast('Welcome back.');
+      } else {
+        toast('Wrong password.', true);
+      }
+    });
+
+    /* ── Sync from Capital.com ── */
+    async function syncFromBroker() {
+      const pw = adminPw();
+      if (!pw) { toast('Log in as admin first.', true); return; }
+
+      const btn   = document.getElementById('syncBtn');
+      const icon  = document.getElementById('syncBtnIcon');
+      const label = document.getElementById('syncBtnLabel');
+      btn.disabled = true;
+      icon.classList.add('spin');
+      label.textContent = 'Syncing…';
+
+      try {
+        const r = await fetch('/api/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Admin-Password': pw },
+          body: JSON.stringify({}),
+        });
+        const data = await r.json().catch(() => ({}));
+
+        if (!r.ok || !data.ok) {
+          throw new Error(data.error || ('Sync failed: ' + r.status));
+        }
+
+        if (data.days === 0) {
+          toast('No new closed trades found.');
+        } else {
+          toast(`Synced ${data.days} day${data.days === 1 ? '' : 's'} · ${data.trades} trade${data.trades === 1 ? '' : 's'}.`);
+          /* Reload from server and repaint everything */
+          await loadAllTrades();
+          renderCalendar();
+          computeMonthStats();
+          if (typeof computeAllTimeStats === 'function') computeAllTimeStats();
+        }
+      } catch (err) {
+        toast(err.message || 'Sync failed.', true);
+      } finally {
+        btn.disabled = false;
+        icon.classList.remove('spin');
+        label.textContent = 'Sync';
+      }
+    }
+    document.getElementById('syncBtn').addEventListener('click', syncFromBroker);
+
+    /* ── Calendar ── */
+    function renderCalendar() {
+      document.getElementById('monthLabel').textContent = MONTHS[viewMonth] + ' ' + viewYear;
+      const grid        = document.getElementById('daysGrid');
+      const today       = new Date();
+      const firstDay    = new Date(viewYear, viewMonth, 1).getDay();
+      const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+      const totalCells  = 42; /* always 6 rows × 7 cols */
+
+      grid.innerHTML = '';
+
+      /* ── Leading filler cells (days from previous month) ── */
+      const prevMonthDays = new Date(viewYear, viewMonth, 0).getDate();
+      for (let i = 0; i < firstDay; i++) {
+        const cell = document.createElement('div');
+        cell.className = 'day-cell filler';
+        grid.appendChild(cell);
+      }
+
+      /* ── Current month days ── */
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dateStr = viewYear + '-' + pad(viewMonth + 1) + '-' + pad(d);
+        const trade   = tradesData[dateStr];
+        const isToday = today.getFullYear() === viewYear &&
+                        today.getMonth()    === viewMonth &&
+                        today.getDate()     === d;
+        const dow       = new Date(viewYear, viewMonth, d).getDay();
+        const isWeekend = dow === 0 || dow === 6;
+
+        const cell = document.createElement('div');
+        cell.className = 'day-cell' + (isToday ? ' today' : '') + (isWeekend ? ' weekend' : '');
+
+        const hasTrade = !!(trade && trade.profit !== '' && trade.profit !== undefined);
+        if (hasTrade) {
+          cell.classList.add('has-trade');
+          const p = parseFloat(trade.profit);
+          if (p > 0) cell.classList.add('profit');
+          else if (p < 0) cell.classList.add('loss');
+        }
+
+        const num = document.createElement('div');
+        num.className = 'day-num';
+        num.textContent = d;
+        cell.appendChild(num);
+
+        if (trade && trade.profit !== '' && trade.profit !== undefined) {
+          const p = parseFloat(trade.profit);
+          const pnlEl = document.createElement('div');
+          pnlEl.className = 'day-pnl ' + (p >= 0 ? 'pos' : 'neg');
+          pnlEl.textContent = fmtMoney(p);
+          cell.appendChild(pnlEl);
+
+          if (trade.percent !== '' && trade.percent !== undefined) {
+            const pct = parseFloat(trade.percent);
+            const pctEl = document.createElement('div');
+            pctEl.className = 'day-pct ' + (pct >= 0 ? 'pos' : 'neg');
+            pctEl.textContent = fmtPct(pct);
+            cell.appendChild(pctEl);
+          }
+        }
+
+        if (!isWeekend) cell.addEventListener('click', () => openModal(dateStr));
+        grid.appendChild(cell);
+      }
+
+      /* ── Trailing filler cells (days from next month) ── */
+      const filled = firstDay + daysInMonth;
+      const trailing = totalCells - filled;
+      for (let i = 0; i < trailing; i++) {
+        const cell = document.createElement('div');
+        cell.className = 'day-cell filler';
+        grid.appendChild(cell);
+      }
+
+      computeMonthStats();
+      computeAllTimeStats();
+    }
+
+    /* ── All-time summary (left panel) ── */
+    function computeAllTimeStats() {
+      let totalPnl = 0, totalCapital = 0, wins = 0, losses = 0;
+      let totalTrades = 0, tradingDays = 0, best = null, worst = null;
+
+      for (const date in tradesData) {
+        const t = tradesData[date];
+        if (t.profit === '' || t.profit === undefined) continue;
+        const p = parseFloat(t.profit);
+        if (isNaN(p)) continue;
+
+        totalPnl += p;
+        tradingDays++;
+        if (p > 0) wins++; else if (p < 0) losses++;
+
+        const c = parseFloat(effCapital(t));
+        if (!isNaN(c) && c > 0) totalCapital += c;
+
+        const tt = parseInt(t.trades);
+        if (!isNaN(tt)) totalTrades += tt;
+
+        if (best  === null || p > best)  best  = p;
+        if (worst === null || p < worst) worst = p;
+      }
+
+      const decided   = wins + losses;
+      const winrate   = decided > 0 ? (wins / decided * 100) : null;
+      const pctReturn = totalCapital > 0 ? (totalPnl / totalCapital * 100) : null;
+
+      /* Total P&L */
+      const pnlEl = document.getElementById('atPnl');
+      pnlEl.textContent = totalPnl === 0 ? '€0' : fmtMoney(totalPnl);
+      pnlEl.className = 'at-val' + (totalPnl > 0 ? ' pos' : totalPnl < 0 ? ' neg' : '');
+
+      /* Total return % */
+      const pctEl = document.getElementById('atPct');
+      if (pctReturn === null) { pctEl.textContent = '—'; pctEl.className = 'at-val'; }
+      else {
+        pctEl.textContent = fmtPct(pctReturn);
+        pctEl.className = 'at-val' + (pctReturn > 0 ? ' pos' : pctReturn < 0 ? ' neg' : '');
+      }
+
+      document.getElementById('atTrades').textContent = totalTrades || '0';
+      document.getElementById('atDays').textContent   = tradingDays || '0';
+
+      const bestEl  = document.getElementById('atBest');
+      const worstEl = document.getElementById('atWorst');
+      bestEl.textContent  = best  === null ? '—' : fmtMoney(best);
+      worstEl.textContent = worst === null ? '—' : fmtMoney(worst);
+
+      /* Win-rate ring */
+      const C   = 2 * Math.PI * 52;          /* r = 52 */
+      const fg  = document.getElementById('atRingFg');
+      const num = document.getElementById('atWinNum');
+      const wr  = winrate === null ? 0 : winrate;
+      fg.style.strokeDasharray  = C;
+      fg.style.strokeDashoffset = C * (1 - wr / 100);
+      fg.style.stroke = (winrate !== null && winrate >= 50) ? '#16a34a' : '#dc2626';
+      num.textContent = winrate === null ? '—' : winrate.toFixed(0) + '%';
+    }
+
+    /* ── Trade-entry rules (right panel) ── */
+    const RULES_COUNT = 10;
+    let rulesData = [];    /* [{id, text}] */
+
+    async function loadRules() {
+      try {
+        const r = await fetch('/api/rules', { cache: 'no-store' });
+        if (r.ok) {
+          const data = await r.json();
+          rulesData = Array.isArray(data) ? data : [];
+        }
+      } catch { /* offline → empty */ }
+      if (!Array.isArray(rulesData)) rulesData = [];
+      renderRules();
+    }
+
+    function renderRules() {
+      const list = document.getElementById('rulesList');
+      if (!list) return;
+      const arr = Array.isArray(rulesData) ? rulesData : [];
+      const byId = {};
+      arr.forEach(x => { if (x && x.id) byId[x.id] = x.text || ''; });
+
+      list.innerHTML = '';
+      for (let i = 1; i <= RULES_COUNT; i++) {
+        const val = byId[i] || '';
+
+        const row = document.createElement('div');
+        row.className = 'rule-row' + (val.trim() ? ' filled' : '');
+
+        const num = document.createElement('span');
+        num.className = 'rule-num';
+        num.textContent = i;
+
+        const ta = document.createElement('textarea');
+        ta.className   = 'rule-input';
+        ta.dataset.id  = i;
+        ta.rows        = 1;
+        ta.value       = val;
+        ta.placeholder = isAdmin() ? ('Rule ' + i + '…') : '';
+
+        ta.addEventListener('input', () => {
+          autoGrow(ta);
+          row.classList.toggle('filled', !!ta.value.trim());
+        });
+
+        row.appendChild(num);
+        row.appendChild(ta);
+        list.appendChild(row);
+        autoGrow(ta);
+      }
+
+      const sub = document.getElementById('rulesSub');
+      if (sub) sub.textContent = isAdmin()
+        ? 'Edit your checklist — every trade must pass these'
+        : 'My checklist — every trade must pass these';
+    }
+
+    async function saveRules() {
+      const pw = adminPw();
+      if (!pw) { toast('Admin only.', true); return; }
+
+      const btn = document.getElementById('rulesSaveBtn');
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+
+      const rules = [];
+      document.querySelectorAll('.rule-input').forEach(ta => {
+        rules.push({ id: parseInt(ta.dataset.id), text: ta.value });
+      });
+
+      try {
+        const r = await fetch('/api/rules', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Admin-Password': pw },
+          body: JSON.stringify({ rules }),
+        });
+        if (!r.ok) throw new Error('Save failed');
+        rulesData = rules;
+        renderRules();
+        toast('Rules saved!');
+      } catch {
+        toast('Failed to save rules — try again.', true);
+      }
+
+      btn.disabled = false;
+      btn.textContent = 'Save rules';
+    }
+
+    document.getElementById('rulesSaveBtn').addEventListener('click', saveRules);
+
+    /* ── Modal ── */
+    async function openModal(dateStr) {
+      activeDate    = dateStr;
+
+      const [y, m, d] = dateStr.split('-');
+      document.getElementById('modalTitle').textContent =
+        MONTHS[parseInt(m) - 1] + ' ' + parseInt(d) + ', ' + y;
+
+      /* Reset form */
+      document.getElementById('fDate').value    = dateStr;
+      document.getElementById('fProfit').value  = '';
+      document.getElementById('fPercent').value = '';
+      document.getElementById('fCapital').value = '';
+      applyCapitalMode(false);
+      document.getElementById('fRR').value      = '';
+      document.getElementById('fTrades').value  = '';
+      document.getElementById('fMarket').value  = '';
+      document.getElementById('nBefore').value  = '';
+      document.getElementById('nEntry').value   = '';
+      document.getElementById('nClose').value   = '';
+      document.getElementById('nAfter').value   = '';
+      document.getElementById('nSummary').value = '';
+
+      /* Fill from saved data */
+      const t = tradesData[dateStr];
+      if (t) {
+        if (t.profit   !== undefined) document.getElementById('fProfit').value  = t.profit;
+        if (t.percent  !== undefined) document.getElementById('fPercent').value = t.percent;
+        if (t.capitalOverridden) {
+          applyCapitalMode(true);
+          document.getElementById('fCapital').value = (t.capitalRisked !== undefined) ? t.capitalRisked : '';
+        } else {
+          applyCapitalMode(false);
+          document.getElementById('fCapital').value = (t.capital !== undefined) ? t.capital : '';
+        }
+        if (t.rr       !== undefined) document.getElementById('fRR').value      = t.rr;
+        if (t.trades   !== undefined) document.getElementById('fTrades').value  = t.trades;
+        if (t.market   !== undefined) document.getElementById('fMarket').value  = t.market;
+        if (t.nBefore  !== undefined) document.getElementById('nBefore').value  = t.nBefore;
+        if (t.nEntry   !== undefined) document.getElementById('nEntry').value   = t.nEntry;
+        if (t.nClose   !== undefined) document.getElementById('nClose').value   = t.nClose;
+        if (t.nAfter   !== undefined) document.getElementById('nAfter').value   = t.nAfter;
+        if (t.nSummary !== undefined) document.getElementById('nSummary').value = t.nSummary;
+      }
+
+      /* Recalculate % from profit/capital (auto-derived) */
+      recalcPercent();
+
+      document.getElementById('overlay').classList.add('open');
+
+      /* Resize textareas to fit existing notes */
+      document.querySelectorAll('.note-field textarea').forEach(autoGrow);
+    }
+
+    function closeModal() {
+      document.getElementById('overlay').classList.remove('open');
+      activeDate = null;
+    }
+
+    /* Auto-recalc % on every keystroke */
+    document.getElementById('fProfit').addEventListener('input', recalcPercent);
+    document.getElementById('fCapital').addEventListener('input', recalcPercent);
+
+    /* ── Save ── */
+    document.getElementById('saveBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('saveBtn');
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+
+      const dateStr = document.getElementById('fDate').value || activeDate;
+      const prev = tradesData[dateStr] || {};
+      const fieldVal = document.getElementById('fCapital').value;
+
+      const payload = {
+        date:     dateStr,
+        profit:   document.getElementById('fProfit').value,
+        percent:  document.getElementById('fPercent').value,
+        /* Keep Capital.com's value as the preset; lock to your own only when overridden */
+        capital:        capOverridden ? prev.capital : fieldVal,
+        capitalOverridden: capOverridden,
+        capitalRisked:  capOverridden ? fieldVal : (prev.capitalRisked || ''),
+        rr:       document.getElementById('fRR').value,
+        trades:   document.getElementById('fTrades').value,
+        market:   document.getElementById('fMarket').value,
+        nBefore:  document.getElementById('nBefore').value,
+        nEntry:   document.getElementById('nEntry').value,
+        nClose:   document.getElementById('nClose').value,
+        nAfter:   document.getElementById('nAfter').value,
+        nSummary: document.getElementById('nSummary').value,
+      };
+
+      try {
+        await saveTradeData(dateStr, payload);
+
+        tradesData[dateStr] = payload;
+        renderCalendar();
+        toast('Saved!');
+        setTimeout(closeModal, 600);
+      } catch {
+        toast('Failed to save — please try again.', true);
+      }
+
+      btn.disabled = false;
+      btn.textContent = 'Save Trade';
+    });
+
+    /* ── Navigation ── */
+    document.getElementById('prevMonth').addEventListener('click', () => {
+      viewMonth--;
+      if (viewMonth < 0)  { viewMonth = 11; viewYear--; }
+      renderCalendar();
+    });
+
+    document.getElementById('nextMonth').addEventListener('click', () => {
+      viewMonth++;
+      if (viewMonth > 11) { viewMonth = 0;  viewYear++; }
+      renderCalendar();
+    });
+
+    document.getElementById('closeBtn').addEventListener('click', closeModal);
+    document.getElementById('overlay').addEventListener('click', (e) => {
+      if (e.target === document.getElementById('overlay')) closeModal();
+    });
+
+    /* ── Init ── */
+    (async () => {
+      refreshAdminUI();   /* set viewer/admin mode immediately */
+      await loadAllTrades();
+      renderCalendar();
+      await loadRules();
+    })();
+
+    /* ── Auto-grow textareas as you type ── */
+    function autoGrow(ta) {
+      ta.style.height = 'auto';
+      ta.style.height = ta.scrollHeight + 'px';
+    }
+    document.querySelectorAll('.note-field textarea').forEach(ta => {
+      ta.addEventListener('input', () => autoGrow(ta));
+    });
+
+    /* ── Day / Night theme ── */
+    function applyTheme(night) {
+      document.body.classList.toggle('night-mode', night);
+      document.getElementById('themeBtn').textContent = night ? '☀️' : '🌙';
+    }
+    document.getElementById('themeBtn').addEventListener('click', () => {
+      const night = !document.body.classList.contains('night-mode');
+      applyTheme(night);
+      localStorage.setItem('tradejournal_theme', night ? 'night' : 'day');
+    });
+    /* Default: night mode unless user explicitly chose day */
+    const savedTheme = localStorage.getItem('tradejournal_theme');
+    applyTheme(savedTheme !== 'day');
+
+  </script>
+</body>
+</html>
